@@ -1,0 +1,47 @@
+================================================================================
+ SETUP PROMPT — give this to Claude in your terminal (Claude Code) to enable an
+ ACCURATE design-vs-build comparison. Works on macOS, Linux, or Windows.
+ Copy everything between the lines and send it as-is.
+================================================================================
+
+I need a working headless Chromium so a screenshot-based tool can render local
+HTML. Set it up in THIS environment (detect my OS automatically) and verify it
+actually launches. Do the following and show me the output of each step, then a
+one-line verdict:
+
+1) Detect OS and any Chrome/Chromium already available:
+   - macOS:   ls "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" 2>/dev/null;
+              ls "/Applications/Chromium.app/Contents/MacOS/Chromium" 2>/dev/null
+   - Linux:   for b in chromium chromium-browser google-chrome google-chrome-stable chrome chrome-headless-shell headless-shell; do command -v "$b" && "$b" --version; done
+   - Windows: where chrome 2>nul & dir "%ProgramFiles%\Google\Chrome\Application\chrome.exe" 2>nul
+   - Also check caches (all OSes):
+     ls -d ~/.cache/puppeteer/chrome*/*/* 2>/dev/null; ls -d ~/.cache/ms-playwright/chromium*/ 2>/dev/null; ls -d ~/Library/Caches/ms-playwright/chromium*/ 2>/dev/null
+
+2) If nothing usable is found, install a browser WITHOUT requiring admin rights,
+   using whatever is available here (try in this order, stop at the first success):
+   a) Node present?  ->  npx --yes @puppeteer/browsers install chrome@stable
+      (prints the installed binary path; this downloads only the browser)
+   b) Python+pip present?  ->  pip install --quiet playwright && python -m playwright install chromium
+   c) OS package manager (only if the above fail and you have rights):
+      macOS: brew install --cask chromium    |   Debian/Ubuntu: sudo apt-get install -y chromium
+   Capture and print the absolute path to the installed Chrome/Chromium binary.
+
+3) Prove it works (replace BIN with the path you found/installed):
+   "BIN" --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
+         --window-size=1000,400 --screenshot=/tmp/_chk.png \
+         "data:text/html,<h1 dir=rtl style=font-size:60px>اختبار المتصفح</h1>"
+   then confirm the PNG exists and is non-empty (e.g. `ls -l /tmp/_chk.png`).
+   (On a "chrome-headless-shell" binary use --headless instead of --headless=new.)
+
+4) Make the tool find it automatically: export the path so future runs pick it up
+   (add to my shell profile too), e.g.:
+      export PUPPETEER_EXECUTABLE_PATH="BIN"
+
+Finally tell me:
+- The absolute path to the working Chromium binary.
+- That `export PUPPETEER_EXECUTABLE_PATH=...` is set.
+- Verdict: READY (browser works) or BLOCKED (and exactly which step failed, e.g.
+  network/download restricted or no install rights).
+
+When it says READY, re-run:  /ai-to-html test
+================================================================================

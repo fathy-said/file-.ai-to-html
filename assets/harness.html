@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="__LANG__" dir="__DIR__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+/* ============================================================
+   FONTS: drop your project font files next to this HTML (in fonts/)
+   and edit BOTH the name and the path below.
+     PROJECT_DISPLAY = headings font   |   PROJECT_BODY = body font
+   You may use the same file for both if it's a single font.
+   ============================================================ */
+@font-face{
+  font-family:"PROJECT_DISPLAY";
+  src:url("__DISPLAY_FILE__") format("__DISPLAY_FMT__");
+  font-weight:normal; font-style:normal; font-display:swap;
+}
+@font-face{
+  font-family:"PROJECT_BODY";
+  src:url("__BODY_FILE__") format("__BODY_FMT__");
+  font-weight:normal; font-style:normal; font-display:swap;
+}
+
+:root{
+  --design-w: __CANVAS_W__;   /* design width (fixed) - do not change */
+  --max-width: __MAX_W__;     /* max width (px) the design scales up to on wide screens */
+  --bg:__BG__;                /* page background behind the canvas */
+  --font-display:"PROJECT_DISPLAY", __FALLBACK__;
+  --font-body:"PROJECT_BODY", __FALLBACK__;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{background:var(--bg);direction:__DIR__;}
+img{display:block;border:0;}
+
+/* fixed-width canvas centered + scaled as ONE piece by the JS below */
+#scaler{width:100%;overflow:hidden;display:flex;justify-content:center;}
+#canvas{
+  position:relative;
+  width:__CANVAS_W__px;            /* = --design-w */
+  margin:0 auto;
+  transform-origin:top center;     /* transform is set from JS */
+  background:var(--bg);
+}
+.page{position:relative;width:__CANVAS_W__px;overflow:hidden;}
+.bg{position:absolute;left:0;width:__CANVAS_W__px;height:auto;}
+.tx{position:absolute;font-family:var(--font-body);color:#fff;direction:__DIR__;unicode-bidi:plaintext;}
+</style>
+</head>
+<body dir="__DIR__">
+
+<!-- hidden heading for SEO / screen readers (visible title is baked into imagery) -->
+<h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">__SEO_H1__</h1>
+
+<div id="scaler">
+<div id="canvas">
+__SECTIONS__
+</div><!--/canvas-->
+</div><!--/scaler-->
+
+<script>
+(function(){
+  var canvas=document.getElementById('canvas');
+  var scaler=document.getElementById('scaler');
+  var DW=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--design-w'))||__CANVAS_W__;
+  function maxW(){return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--max-width'))||DW;}
+  function fit(){
+    var target=Math.min(scaler.clientWidth, maxW());  /* displayed width, capped */
+    var s=target/DW;                                   /* uniform scale factor */
+    canvas.style.transform='scale('+s+')';
+    scaler.style.height=(canvas.offsetHeight*s)+'px';
+  }
+  window.addEventListener('resize',fit);
+  window.addEventListener('load',fit);
+  if(document.readyState!=='loading') fit();
+  document.addEventListener('DOMContentLoaded',fit);
+})();
+</script>
+</body>
+</html>
