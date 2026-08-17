@@ -73,6 +73,13 @@ def main():
             raise ValueError("bad block type " + t)
         return f'  <div class="tx" style="{st}{fs}{lh}{cc}{ff}">{esc(b["text"])}</div>'
 
+    # follow whatever format make_plate.py actually wrote (band_format: webp|jpg)
+    def _band_ext(idx, i):
+        for ext in ("webp", "jpg", "jpeg"):
+            if os.path.exists(os.path.join(out, "images", f"p{idx}_band{i}.{ext}")):
+                return ext
+        return "webp"
+
     # build sections
     secs = []
     _img_n = 0
@@ -83,7 +90,7 @@ def main():
         for i, (y0, y1) in enumerate(pg["bands"]):
             # first image eager (above the fold); the rest lazy for tall pages
             ld = "eager" if _img_n == 0 else "lazy"
-            secs.append(f'  <img class="bg" src="images/p{idx}_band{i}.jpg" '
+            secs.append(f'  <img class="bg" src="images/p{idx}_band{i}.{_band_ext(idx, i)}" '
                         f'loading="{ld}" decoding="async" '
                         f'style="top:{round(y0*s,1)}px;" alt="">')
             _img_n += 1
@@ -129,13 +136,22 @@ def main():
     # self-contained (embed every referenced image as base64)
     html = harness
     imgdir = os.path.join(out, "images")
+    _embedded_webp = False
     for fn in sorted(os.listdir(imgdir)):
         ref = f'src="images/{fn}"'
         if ref in html:
             data = base64.b64encode(open(os.path.join(imgdir, fn), "rb").read()).decode()
-            mime = "jpeg" if fn.lower().endswith((".jpg", ".jpeg")) else "png"
+            mime = "webp" if fn.lower().endswith(".webp") else ("jpeg" if fn.lower().endswith((".jpg", ".jpeg")) else "png")
+            if mime == "webp":
+                _embedded_webp = True
             html = html.replace(ref, f'src="data:image/{mime};base64,{data}"')
     open(os.path.join(out, "index_self_contained.html"), "w", encoding="utf-8").write(html)
+    if _embedded_webp:
+        print("note: index_self_contained.html embeds WebP data URIs. There is no "
+              "server MIME type and no fallback here -- if the recipient opens it in a "
+              "viewer without WebP support the page renders with no imagery at all. "
+              'Set "band_format": "jpg" in project.json and re-run make_plate.py + '
+              "build_site.py if the delivery target is unknown.")
     print("wrote index_self_contained.html",
           os.path.getsize(os.path.join(out, "index_self_contained.html"))//1024, "KB")
 

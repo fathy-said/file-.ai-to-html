@@ -90,7 +90,7 @@ def main():
     imgdir = os.path.join(out, "handoff_images")
     os.makedirs(imgdir, exist_ok=True)
     # clear stale crops
-    for f in glob.glob(os.path.join(imgdir, "*.png")):
+    for f in glob.glob(os.path.join(imgdir, "*.png")) + glob.glob(os.path.join(imgdir, "*.webp")):
         os.remove(f)
 
     items = []   # (page, bbox_pt|None, text|None, note, kind)

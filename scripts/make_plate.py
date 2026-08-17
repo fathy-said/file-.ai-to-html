@@ -8,7 +8,7 @@ SLICING RULE (strict, safety-first): every cut is placed on a FLAT BACKGROUND ro
 -- a row whose pixels (in the rendered plate) are uniform across the width
 (horizontal std below `flat_std`). Photos, logos, charts, and text all have
 horizontal variation, so a cut never lands on them; it only lands where the
-rendered row is a single flat colour, so the separately-JPEG'd bands re-stack
+rendered row is a single flat colour, so the separately-WebP-encoded bands re-stack
 seamlessly in HTML. (Uniformity is measured on the actual rendered pixels, so a
 flat region that happens to be part of a full-bleed background image still
 qualifies -- which matters for designs that are mostly imagery.)
@@ -22,7 +22,7 @@ The chosen band ranges (pt) are written back into project.json so build_site
 places them at the exact same offsets.
 
 Usage:  python3 make_plate.py project.json
-Writes: {out_dir}/images/p{index}_band{i}.jpg   (+ updates project.json bands)
+Writes: {out_dir}/images/p{index}_band{i}.webp   (+ updates project.json bands)
 """
 import sys, os, json
 import fitz
@@ -30,11 +30,17 @@ import numpy as np
 from PIL import Image
 
 
-def safe_row_index(img, flat_std, pad=8):
+def safe_row_index(img, flat_std, pad=16):
     """Indices of rows safe to cut: a row qualifies only if EVERY row within
     +/-`pad` px is a single flat colour across the width (per-channel std below
-    `flat_std`). The window guarantees the 8x8 JPEG blocks on BOTH sides of the
-    cut are uniform, so the re-stacked bands have no visible seam."""
+    `flat_std`).
+
+    `pad` must cover a whole coding unit of the band encoder on BOTH sides of
+    the cut, so the re-stacked bands have no visible seam. Production bands are
+    WebP (VP8), whose coding unit is a 16x16 macroblock (with 4x4 transforms,
+    intra prediction from neighbours, and an in-loop deblocking filter that has
+    no neighbour to work with at an image edge) -- hence pad=16. The old default
+    of 8 was sized for JPEG's 8x8 DCT blocks and is NOT sufficient for WebP."""
     arr = np.asarray(img)                       # H,W,3 uint8
     sub = arr[:, ::4, :]                        # subsample columns (flatness only)
     row_std = sub.std(axis=1, dtype=np.float32).max(axis=1)   # per-row max-channel std
@@ -74,12 +80,21 @@ def main():
     cfg = json.load(open(path, encoding="utf-8"))
     doc = fitz.open(cfg["source_pdf"])
     zoom = cfg.get("render_zoom", 2.0)
-    q = cfg.get("jpeg_quality", 88)
+    # accept the legacy v1 key so old project.json files are not silently ignored
+    q = cfg.get("webp_quality", cfg.get("jpeg_quality", 90))
+    if "webp_quality" not in cfg and "jpeg_quality" in cfg:
+        print(f"note: using legacy 'jpeg_quality'={q} as the WebP quality; rename it to 'webp_quality' in project.json.")
     out = cfg["out_dir"]
     target = cfg.get("band_target_px", 9000)
     mx = cfg.get("band_max_px", 14000)
     mn = cfg.get("band_min_px", 2000)
     flat_std = cfg.get("flat_std", 3.5)
+    cut_pad  = cfg.get("cut_pad", 16)   # >= WebP macroblock (16); do not lower
+    # "webp" (default, production) or "jpg" -- the documented escape hatch for
+    # delivery targets that cannot decode WebP (see references/troubleshooting.md).
+    fmt = cfg.get("band_format", "webp").lower()
+    if fmt not in ("webp", "jpg"):
+        sys.exit(f"band_format must be 'webp' or 'jpg', got {fmt!r}")
     os.makedirs(os.path.join(out, "images"), exist_ok=True)
 
     in_keep = lambda mid, keep: any(a <= mid <= b for a, b in keep)
@@ -109,20 +124,24 @@ def main():
             ranges = [(int(round(y0 * zoom)), int(round(y1 * zoom))) for y0, y1 in pg["bands"]]
             warns = []
         else:
-            sidx, H = safe_row_index(img, flat_std)
+            sidx, H = safe_row_index(img, flat_std, cut_pad)
             cuts, warns = auto_cuts(sidx, H, target, mx, mn)
             ranges = [(cuts[i], cuts[i + 1]) for i in range(len(cuts) - 1)]
 
         import glob as _glob
-        for _old in _glob.glob(os.path.join(out, "images", f"p{idx}_band*.jpg")):
-            os.remove(_old)
+        for _pat in ("webp", "jpg", "jpeg"):   # also sweep stale v1 JPEG bands
+            for _old in _glob.glob(os.path.join(out, "images", f"p{idx}_band*.{_pat}")):
+                os.remove(_old)
         bands_pt = []
         for i, (y0px, y1px) in enumerate(ranges):
             band = img.crop((0, y0px, img.width, y1px))
             if band.height > mx:
                 print(f"  !! page{idx} band{i} = {band.height}px (>{mx}); kept tall so the cut stays in flat background, not inside imagery.")
-            fn = os.path.join(out, "images", f"p{idx}_band{i}.jpg")
-            band.save(fn, quality=q, optimize=True)
+            fn = os.path.join(out, "images", f"p{idx}_band{i}.{fmt}")
+            if fmt == "webp":
+                band.save(fn, "WEBP", quality=q, method=6)
+            else:
+                band.save(fn, "JPEG", quality=q, optimize=True)
             bands_pt.append([round(y0px / zoom, 2), round(y1px / zoom, 2)])
             print(f"page{idx} band{i}: y {bands_pt[-1][0]}-{bands_pt[-1][1]}pt  {band.size}  {os.path.getsize(fn)//1024}KB")
         for a, b in warns:

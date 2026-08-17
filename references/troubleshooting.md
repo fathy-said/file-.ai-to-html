@@ -7,8 +7,17 @@ this pipeline; check here before re-deriving anything.
 - **Cause A:** they opened `index.html` without the `images/` folder beside it.
   -> Use / send `index_self_contained.html` (images embedded), or keep `images/`
   in the same folder as `index.html`.
-- **Cause B:** images were WebP and their viewer/client doesn't support WebP.
-  -> Always export **JPEG**. (`jpeg_quality` ~88–92.)
+- **Cause B:** the images are WebP and something in the delivery path can't handle it.
+  -> Two distinct failures, check both:
+     1. **Served build** (`index.html` + `images/`): the server is sending `.webp`
+        with the wrong MIME type. Fix the server: `.webp` -> `image/webp`.
+     2. **Self-contained build** (`index_self_contained.html`): there is no server
+        and no MIME negotiation -- the base64 WebP either decodes in the viewer or
+        the page shows nothing. This was the original reason v1 mandated JPEG. If
+        the delivery target is an unknown/embedded viewer rather than a real
+        browser, ship a JPEG build instead.
+  -> Otherwise keep production assets as **WebP** (`webp_quality` ~88-92). QA
+     screenshots and handoff crops stay JPEG/PNG.
 
 ## Arabic text renders left-to-right / disconnected / wrong order
 - Ensure `dir="rtl"` on BOTH `<html>` and `<body>`, `direction:rtl` in CSS, and

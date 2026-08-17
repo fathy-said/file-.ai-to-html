@@ -168,8 +168,17 @@ def render_build_raqm(cfg, out, skill_dir):
     pages = []
     for pg in cfg["pages"]:
         idx = pg["index"]; s = pg.get("scale") or (W / pg["width_pt"])
-        bands = [Image.open(os.path.join(out, "images", f"p{idx}_band{i}.jpg")).convert("RGB")
-                 for i in range(len(pg["bands"]))]
+        def _open_band(i):
+            """Production bands are WebP; fall back to a v1-era JPEG band so an
+            older build directory can still be compared instead of crashing."""
+            for ext in ("webp", "jpg", "jpeg"):
+                fn = os.path.join(out, "images", f"p{idx}_band{i}.{ext}")
+                if os.path.exists(fn):
+                    return Image.open(fn).convert("RGB")
+            raise FileNotFoundError(
+                f"page {idx} band {i}: no p{idx}_band{i}.(webp|jpg) in {out}/images -- "
+                "run make_plate.py first.")
+        bands = [_open_band(i) for i in range(len(pg["bands"]))]
         rw = bands[0].width; tot = sum(b.height for b in bands)
         plate = Image.new("RGB", (rw, tot)); y = 0
         for b in bands:

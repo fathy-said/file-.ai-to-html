@@ -1,28 +1,26 @@
 ---
 name: ai-to-html
 metadata:
-  version: 1.0.0
+  version: 2.1.0
 description: >-
-  MANUAL / OPT-IN SKILL -- DO NOT TRIGGER AUTOMATICALLY. Converts a designed
-  Adobe Illustrator (.ai) file or a design PDF into ONE faithful, responsive,
-  single-file HTML reproduction (all pages stacked; imagery baked as a
-  pixel-perfect background plate; prose re-created as live, font-swappable HTML
-  text; full RTL / Arabic support). IMPORTANT TRIGGERING RULE: use this skill
-  ONLY when the user EXPLICITLY asks for it by name -- e.g. "use the ai-to-html
-  skill", "run ai-to-html on this file", or "convert this with ai-to-html". Do
-  NOT consult, mention, or apply this skill just because a .ai or PDF file was
-  uploaded, or because the user asks to turn a design into HTML / a webpage, or
-  to reproduce/rebuild/convert a design. In all of those cases, only act on this
-  skill if the user named it. Absent an explicit by-name request, ignore this
-  skill entirely.
+  Converts a designed Adobe Illustrator (.ai) file or a design PDF into ONE
+  faithful, responsive, single-file HTML reproduction (all pages stacked;
+  imagery baked as a pixel-perfect background plate; prose re-created as live,
+  font-swappable HTML text; full RTL / Arabic support), and verifies the result
+  against the source pixel-for-pixel. Use this skill when the user uploads or
+  references a .ai file or a design PDF and wants it turned into HTML, a
+  webpage, or a live report; when an existing HTML build must be matched to an
+  Illustrator/PDF source ("X-ray", pixel-match, "why doesn't this match the
+  design", alignment/spacing drift against a design file); or when the user
+  asks for it by name. Do NOT use it for general web development, for building
+  a page from a written brief or a screenshot alone, or for redesigning
+  something when no .ai/PDF source of truth exists.
 ---
 
 # ai-to-html
 
-> Manual/opt-in skill. Only proceed if the user explicitly asked to use
-> `ai-to-html` by name. If you arrived here just because a `.ai`/PDF was
-> uploaded or the user asked to "make this a webpage", stop and handle it
-> normally instead.
+> Illustrator is the source of truth. Never redesign during a fidelity task.
+> Measure → render → compare → diagnose → minimally fix → verify again.
 
 Turn a designed `.ai` / PDF into one responsive HTML file that looks like the
 design but whose text is real, selectable, font-swappable HTML.
@@ -127,7 +125,8 @@ either a chart or a styled text block, or missing/illegible text):
   pointing to `fonts/DISPLAY.*` / `fonts/BODY.*`. Never guess the real font.
 - **Output** = both `index.html` (external `images/`) and
   `index_self_contained.html` (base64), plus a zip + English README.
-- **Image format** = JPEG (universal). Never WebP.
+- **Image format** = **WebP** for all production rasters (`webp_quality` 90).
+  QA artifacts (`compare_p*`, `diff_p*`) and handoff crops stay JPEG/PNG.
 - **Live vs baked** = follow the split below.
 
 ## The core split: live text vs baked image
@@ -211,7 +210,7 @@ project that you assemble after reading that design.
    ```
    This strips live text, keeps imagery + keep-regions, renders at 2x,
    auto-slices the page into safe seamless bands, and writes them to
-   `<out_dir>/images/p{page}_band{i}.jpg` (the chosen ranges are saved back into
+   `<out_dir>/images/p{page}_band{i}.webp` (the chosen ranges are saved back into
    `project.json`, so the next step places them at matching offsets).
 
 **5. Define live-text blocks.** Add a `blocks` array to that app's
@@ -384,7 +383,9 @@ Never persist a lesson without the user's OK.
   "fonts": {"display_file":"fonts/DISPLAY.woff2","display_fmt":"woff2",
             "body_file":"fonts/BODY.woff2","body_fmt":"woff2"},
   "fallback": "\"Segoe UI\", Tahoma, \"Geeza Pro\", \"Noto Sans Arabic\", Arial, sans-serif",
-  "render_zoom": 2.0, "jpeg_quality": 88,
+  "render_zoom": 2.0, "webp_quality": 90,
+  "band_format": "webp",          // "jpg" only for viewers without WebP support
+  "cut_pad": 16,                  // >= WebP macroblock; do not lower
   "min_contrast": 3.0,
   "zip_name": "site.zip",
   "pages": [
@@ -422,6 +423,39 @@ strict live-text integrity check; a live block whose colour falls below it again
 its background is flagged as invisible. Lower it only if a design intentionally
 uses subtler-but-legible text.
 
+## X-ray matching discipline
+
+When an existing HTML build must match Illustrator, **fix the existing code; do not rebuild or redesign it**. Illustrator wins every disagreement.
+
+- Convert Illustrator coordinates to page-relative coordinates before comparing.
+- Prefer `GetGeometry` transformation matrices over screenshot eyeballing.
+- Measure a small set of layout landmarks (title Y, major section starts, chart/image centers, closing element) with browser `getBoundingClientRect()` at the same design scale.
+- Record source coordinate, HTML coordinate, delta, responsible element, and likely upstream cause.
+- Use overlay/diff images when numeric measurements do not explain a mismatch.
+- Iterate render → measure → fix → render until landmarks converge.
+- Do not treat a temporarily worse aggregate score as a regression if an upstream error was previously cancelling a downstream error.
+- Never revert user edits encountered during the loop; treat them as authoritative.
+
+## Section scrolling / presentation behavior
+
+When the design is explicitly composed of full-screen sections (`100vh`) and the user wants one smooth section per scroll, use CSS scroll snapping rather than redesigning the sections:
+
+```css
+.report {
+  height: 100vh;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+.report-section {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+```
+
+Do not force this behavior when the source design is a continuous scrolling report or when a section can legitimately exceed the viewport.
+
 ## Critical rules (do not relearn the hard way)
 
 - **Arabic/RTL wrap QA uses PIL+raqm, never wkhtmltoimage** — the old WebKit does
@@ -433,8 +467,11 @@ uses subtler-but-legible text.
   add a «صحّح هذا النص» placeholder block for missing text), then rebuilds and
   re-checks until the verdict is `PASS`. Plain `test` only measures. This is the
   one class of issue that is auto-fixed; everything else is proposed first.
-- **JPEG, not WebP** — some viewers/clients don't render WebP and the images
-  silently vanish.
+- **WebP production assets are the default.** QA artifacts and handoff crops stay
+  JPEG/PNG. The preview server must serve `.webp` as `image/webp`. Note that
+  `index_self_contained.html` embeds base64 WebP with no server and no fallback:
+  if the delivery target is an unknown viewer rather than a real browser, set
+  `"band_format": "jpg"` and rebuild.
 - **RTL setup:** `dir="rtl"` on html+body, `.tx{direction:rtl;unicode-bidi:plaintext}`,
   and Arabic fallback fonts — so it reads correctly before the real font loads.
 - **Bands are sliced automatically** by `make_plate.py` — cuts land only on
